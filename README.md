@@ -10,8 +10,8 @@ Import the library:
 
 Use it:
 ```go
-    dawg := dawg.CreateDAWGFromFile(os.Args[1])
-    for _, word := range dawg.Search(dawg, "aging", 2, 50, true, true) {
+    graph := dawg.CreateDAWGFromFile(os.Args[1])
+    for _, word := range dawg.Search(graph, "aging", 2, 50, true, true) {
         fmt.Println(word)
     }
 ```
