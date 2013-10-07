@@ -4,7 +4,6 @@ package dawg
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"os"
 )
 
@@ -90,11 +89,10 @@ func (state *state) getletter(letter rune) *letter {
 
 // Create a new DAWG by loading the words from a file.
 // The file must be UTF-8 encoded, one word per line.
-func CreateDAWGFromFile(fileName string) *DAWG {
+func CreateDAWGFromFile(fileName string) (dawg *DAWG, err error) {
 	file, err := os.Open(fileName)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to read file ", fileName, ": ", err)
-		os.Exit(2)
+		return
 	}
 	defer file.Close()
 
@@ -111,12 +109,11 @@ func CreateDAWGFromFile(fileName string) *DAWG {
 		}
 		nbNodes += createdNodes
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to scan file ", fileName, ": ", err)
-		os.Exit(3)
+	if err = scanner.Err(); err != nil {
+		return
 	}
 	nbNodes -= compressTrie(initialState, maxWordSize)
-	return &DAWG{initialState: initialState, nodesCount: nbNodes}
+	return &DAWG{initialState: initialState, nodesCount: nbNodes}, nil
 }
 
 // Create a new DAWG by loading the words from an array.
@@ -243,8 +240,11 @@ func addWord(initialState *state, word string) (newEndState bool, wordSize int, 
 // levenshteinDistance is the maximum Levenshtein distance allowed beetween word and the words found in the DAWG.
 // maxResults allow to limit the number of returned results (to reduce the time needed by the search)
 // allowAdd and allowDelete specify if the returned words can have insertions/deletions of letters
-func Search(dawg *DAWG, word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string) {
-	wordsFound, _, wordsSize := searchSubString(dawg.initialState, *bytes.NewBufferString(""), *bytes.NewBufferString(word), levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
+func Search(dawg *DAWG, word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string, err error) {
+	wordsFound, _, wordsSize, err := searchSubString(dawg.initialState, *bytes.NewBufferString(""), *bytes.NewBufferString(word), levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
+	if err != nil {
+		return
+	}
 	// Truncate if we have found more words than we need
 	for ; wordsSize > maxResults; wordsSize-- {
 		wordsFound = wordsFound.nextWord
@@ -270,23 +270,23 @@ func mergeWords(words1 *word, lastWord1 *word, wordsSize1 int, words2 *word, las
 	}
 }
 
-func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool, ignoreChar rune) (words *word, lastWord *word, wordsSize int) {
+func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool, ignoreChar rune) (words *word, lastWord *word, wordsSize int, er error) {
 	var char rune
-	var err error
 	if end.Len() > 0 {
-		char, _, err = end.ReadRune()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error while searching:", err)
-			os.Exit(4)
+		char, _, er = end.ReadRune()
+		if er != nil {
+			return
 		}
 		if char != ignoreChar {
 			if letter := state.getletter(char); letter != nil {
 				runeLen, err := start.WriteRune(letter.char)
 				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error while searching:", err)
-					os.Exit(5)
+					return nil, nil, 0, err
 				}
-				foundWords, foundLastWord, foundWordsSize := searchSubString(letter.state, start, end, levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
+				foundWords, foundLastWord, foundWordsSize, err := searchSubString(letter.state, start, end, levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
+				if err != nil {
+					return nil, nil, 0, err
+				}
 				words, lastWord, wordsSize = mergeWords(foundWords, foundLastWord, foundWordsSize, words, lastWord, wordsSize)
 				if maxResults > 0 && wordsSize > maxResults {
 					return
@@ -300,10 +300,12 @@ func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levensh
 				if letter.char != char && letter.char != ignoreChar { // Change one letter
 					runeLen, err := start.WriteRune(letter.char)
 					if err != nil {
-						fmt.Fprintln(os.Stderr, "Error while searching:", err)
-						os.Exit(6)
+						return nil, nil, 0, err
 					}
-					foundWords, foundLastWord, foundWordsSize := searchSubString(letter.state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, char)
+					foundWords, foundLastWord, foundWordsSize, err := searchSubString(letter.state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, char)
+					if err != nil {
+						return nil, nil, 0, err
+					}
 					words, lastWord, wordsSize = mergeWords(foundWords, foundLastWord, foundWordsSize, words, lastWord, wordsSize)
 					if maxResults > 0 && wordsSize > maxResults {
 						return
@@ -312,7 +314,10 @@ func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levensh
 				}
 			}
 			if allowDelete {
-				foundWords, foundLastWord, foundWordsSize := searchSubString(state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, char) // Remove one letter
+				foundWords, foundLastWord, foundWordsSize, err := searchSubString(state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, char) // Remove one letter
+				if err != nil {
+					return nil, nil, 0, err
+				}
 				words, lastWord, wordsSize = mergeWords(foundWords, foundLastWord, foundWordsSize, words, lastWord, wordsSize)
 				if maxResults > 0 && wordsSize > maxResults {
 					return
@@ -321,8 +326,7 @@ func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levensh
 		}
 
 		if err := end.UnreadRune(); err != nil { // Revert the ReadRune
-			fmt.Fprintln(os.Stderr, "Error while searching:", err)
-			os.Exit(7)
+			return nil, nil, 0, err
 		}
 	} else if state.final {
 		words = &word{content: start.String(), nextWord: words}
@@ -335,10 +339,12 @@ func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levensh
 			if letter.char != char && letter.char != ignoreChar { // Add one letter
 				runeLen, err := start.WriteRune(letter.char)
 				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error while searching:", err)
-					os.Exit(8)
+					return nil, nil, 0, err
 				}
-				foundWords, foundLastWord, foundWordsSize := searchSubString(letter.state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, 0)
+				foundWords, foundLastWord, foundWordsSize, err := searchSubString(letter.state, start, end, levenshteinDistance-1, maxResults, allowAdd, allowDelete, 0)
+				if err != nil {
+					return nil, nil, 0, err
+				}
 				words, lastWord, wordsSize = mergeWords(foundWords, foundLastWord, foundWordsSize, words, lastWord, wordsSize)
 				if maxResults > 0 && wordsSize > maxResults {
 					return
