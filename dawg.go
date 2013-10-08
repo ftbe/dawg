@@ -148,7 +148,7 @@ func compressTrie(initialState *state, maxWordSize int) (deletedNodes uint) {
 		for curLetter := initialState.letters; curLetter != nil; curLetter = curLetter.next {
 			// Parallelize the treatment
 			go func(curState *state) {
-				analyseSubTrie(curState, &levels, &channels)
+				analyseSubTrie(curState, levels, channels)
 				done <- 1
 			}(curLetter.state)
 		}
@@ -175,7 +175,7 @@ func compressTrie(initialState *state, maxWordSize int) (deletedNodes uint) {
 	return
 }
 
-func analyseSubTrie(curState *state, levels *[]*state, channels *[]chan int) (subLevels int) {
+func analyseSubTrie(curState *state, levels []*state, channels []chan int) (subLevels int) {
 	var curLevel int = 0
 	if curState.lettersCount != 0 {
 		for curLetter := curState.letters; curLetter != nil; curLetter = curLetter.next {
@@ -186,10 +186,10 @@ func analyseSubTrie(curState *state, levels *[]*state, channels *[]chan int) (su
 		}
 	}
 
-	<-(*channels)[curLevel]
-	curState.next = (*levels)[curLevel]
-	(*levels)[curLevel] = curState
-	(*channels)[curLevel] <- 1
+	<-channels[curLevel]
+	curState.next = levels[curLevel]
+	levels[curLevel] = curState
+	channels[curLevel] <- 1
 
 	return curLevel + 1
 }
