@@ -240,7 +240,7 @@ func addWord(initialState *state, word string) (newEndState bool, wordSize int, 
 // levenshteinDistance is the maximum Levenshtein distance allowed beetween word and the words found in the DAWG.
 // maxResults allow to limit the number of returned results (to reduce the time needed by the search)
 // allowAdd and allowDelete specify if the returned words can have insertions/deletions of letters
-func Search(dawg *DAWG, word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string, err error) {
+func (dawg *DAWG) Search (word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string, err error) {
 	wordsFound, _, wordsSize, err := searchSubString(dawg.initialState, *bytes.NewBufferString(""), *bytes.NewBufferString(word), levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
 	if err != nil {
 		return

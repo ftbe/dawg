@@ -12,17 +12,17 @@ func TestCreateDAWG(t *testing.T) {
 func TestSearch(t *testing.T) {
 	dawg := CreateDAWG([]string{"test", "tese", "nest", "test2", "tes", "note"})
 
-	test, err := Search(dawg, "test", 0, 1, false, false)
+	test, err := dawg.Search("test", 0, 1, false, false)
 	if err != nil || len(test) != 1 || test[0] != "test" {
 		t.Error("Search failed")
 	}
 
-	test, err = Search(dawg, "test", 1, 10, false, false)
+	test, err = dawg.Search("test", 1, 10, false, false)
 	if err != nil || len(test) != 3 {
 		t.Error("Search failed")
 	}
 
-	test, err = Search(dawg, "test", 1, 10, true, true)
+	test, err = dawg.Search("test", 1, 10, true, true)
 	if err != nil || len(test) != 5 {
 		t.Error("Search failed")
 	}

@@ -15,7 +15,7 @@ Use it:
         // Do something
         return
     }
-    words, err := dawg.Search(graph, "aging", 2, 50, true, true)
+    words, err := graph.Search("aging", 2, 50, true, true)
     if err != nil {
         // Do something
         return
