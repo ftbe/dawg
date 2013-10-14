@@ -24,3 +24,7 @@ Use it:
         fmt.Println(word)
     }
 ```
+
+# Documentation
+
+API documentation is [available on godoc](http://godoc.org/github.com/ftbe/dawg).
