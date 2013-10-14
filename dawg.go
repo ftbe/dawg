@@ -4,13 +4,16 @@ package dawg
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // DAWG is used to store the representation of the Directly Acyclic Word Graph
 type DAWG struct {
 	initialState *state
-	nodesCount   uint
+	nodesCount   uint64
 }
 
 type letter struct {
@@ -33,7 +36,7 @@ type state struct {
 
 	next   *state  // Linked list of all the state on the same level (used to merge duplicate nodes)
 	letter *letter // The letter this state comes from (used to merge duplicate nodes)
-	number uint    // The number of this state (used to save the DAWG to a file)
+	number uint64  // The number of this state (used to save the DAWG to a file)
 }
 
 // Linked list of words
@@ -100,7 +103,7 @@ func CreateDAWGFromFile(fileName string) (dawg *DAWG, err error) {
 	scanner := bufio.NewScanner(reader)
 
 	initialState := &state{final: false}
-	var nbNodes uint = 1
+	var nbNodes uint64 = 1
 	maxWordSize := 0
 	for scanner.Scan() {
 		_, size, createdNodes := addWord(initialState, scanner.Text())
@@ -119,7 +122,7 @@ func CreateDAWGFromFile(fileName string) (dawg *DAWG, err error) {
 // Create a new DAWG by loading the words from an array.
 func CreateDAWG(words []string) *DAWG {
 	initialState := &state{final: false}
-	var nbNodes uint = 1
+	var nbNodes uint64 = 1
 	maxWordSize := 0
 	for _, word := range words {
 		_, size, createdNodes := addWord(initialState, word)
@@ -132,7 +135,7 @@ func CreateDAWG(words []string) *DAWG {
 	return &DAWG{initialState: initialState, nodesCount: nbNodes}
 }
 
-func compressTrie(initialState *state, maxWordSize int) (deletedNodes uint) {
+func compressTrie(initialState *state, maxWordSize int) (deletedNodes uint64) {
 	// First, analyse the trie recursively to create a linked list of all the state on the same level
 	levels := make([]*state, maxWordSize)
 	if initialState.lettersCount != 0 {
@@ -195,7 +198,7 @@ func analyseSubTrie(curState *state, levels []*state, channels []chan int) (subL
 }
 
 // Add a new word to the Trie
-func addWord(initialState *state, word string) (newEndState bool, wordSize int, createdNodes uint) {
+func addWord(initialState *state, word string) (newEndState bool, wordSize int, createdNodes uint64) {
 	curState := initialState
 	for i, l := range word {
 		var curLetter *letter
@@ -240,7 +243,7 @@ func addWord(initialState *state, word string) (newEndState bool, wordSize int, 
 // levenshteinDistance is the maximum Levenshtein distance allowed beetween word and the words found in the DAWG.
 // maxResults allow to limit the number of returned results (to reduce the time needed by the search)
 // allowAdd and allowDelete specify if the returned words can have insertions/deletions of letters
-func (dawg *DAWG) Search (word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string, err error) {
+func (dawg *DAWG) Search(word string, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool) (words []string, err error) {
 	wordsFound, _, wordsSize, err := searchSubString(dawg.initialState, *bytes.NewBufferString(""), *bytes.NewBufferString(word), levenshteinDistance, maxResults, allowAdd, allowDelete, 0)
 	if err != nil {
 		return
@@ -268,6 +271,162 @@ func mergeWords(words1 *word, lastWord1 *word, wordsSize1 int, words2 *word, las
 	} else {
 		return words1, lastWord2, wordsSize1 + wordsSize2
 	}
+}
+
+// Load from a file a DAWG saved by SaveToFile
+func LoadDAWGFromFile(fileName string) (dawg *DAWG, err error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	scanner := bufio.NewScanner(reader)
+
+	var nbNodes uint64
+	var initialState *state
+	if scanner.Scan() {
+		nbNodes, err = strconv.ParseUint(scanner.Text(), 10, 64)
+		if err != nil {
+			return
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		return
+	}
+	states := make([]*state, nbNodes)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), " ")
+		if len(fields) < 2 {
+			err = errors.New("Incorrect node format : at least 2 fields expected.")
+			return
+		}
+		var nodeNumber uint64
+		nodeNumber, err = strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			return
+		}
+		var finalNode bool
+		finalNode, err = strconv.ParseBool(fields[1])
+		if err != nil {
+			return
+		}
+
+		states[nodeNumber] = &state{final: finalNode}
+		initialState = states[nodeNumber]
+		var char rune = 0
+		for i, str := range fields[2:] {
+			if i%2 == 0 {
+				// It seems that char, _, _, err = strconv.UnquoteChar(str, 0) doesn't work, so we have to use Unquote before UnquoteChar
+				var unquoted string
+				unquoted, err = strconv.Unquote(str)
+				if err != nil {
+					return
+				}
+				char, _, _, err = strconv.UnquoteChar(unquoted, 0)
+				if err != nil {
+					return
+				}
+			} else {
+				var linkedNodeNumber uint64
+				linkedNodeNumber, err = strconv.ParseUint(str, 10, 64)
+				if err != nil {
+					return
+				}
+
+				states[nodeNumber].lettersCount = (i + 1) / 2
+
+				if states[nodeNumber].letters == nil {
+					states[nodeNumber].letters = &letter{char: char, state: states[linkedNodeNumber]}
+				} else {
+					for curLetter := states[nodeNumber].letters; curLetter.char != char; {
+						if curLetter.char < char {
+							if curLetter.left == nil {
+								curLetter.left = &letter{char: char, state: states[linkedNodeNumber]}
+								curLetter.left.next = states[nodeNumber].letters.next
+								states[nodeNumber].letters.next = curLetter.left
+							}
+							curLetter = curLetter.left
+						} else {
+							if curLetter.right == nil {
+								curLetter.right = &letter{char: char, state: states[linkedNodeNumber]}
+								curLetter.right.next = states[nodeNumber].letters.next
+								states[nodeNumber].letters.next = curLetter.right
+							}
+							curLetter = curLetter.right
+						}
+					}
+				}
+			}
+		}
+	}
+	if err = scanner.Err(); err != nil {
+		return
+	}
+	return &DAWG{initialState: initialState, nodesCount: nbNodes}, nil
+}
+
+// Save the DAWG to a file, usefull if you want to load it later without re-computing anything
+func (dawg *DAWG) SaveToFile(fileName string) (err error) {
+	file, err := os.Create(fileName)
+	if err != nil {
+		return
+	}
+
+	if _, err = file.WriteString(strconv.FormatUint(dawg.nodesCount, 10)); err != nil {
+		return
+	}
+	if _, err = file.WriteString("\n"); err != nil {
+		return
+	}
+
+	var nodeNumber uint64 = 0
+	// FIXME: if dawg.initialState.number != 0, the file was already saved, reinit all the numbers
+	err = saveSubTrieToFile(file, dawg.initialState, &nodeNumber)
+	return
+}
+
+func saveSubTrieToFile(file *os.File, curState *state, nodeNumber *uint64) (err error) {
+	for curLetter := curState.letters; curLetter != nil; curLetter = curLetter.next {
+		if curLetter.state.number == 0 {
+			err = saveSubTrieToFile(file, curLetter.state, nodeNumber)
+			if err != nil {
+				return
+			}
+		}
+	}
+	if curState.number == 0 {
+		(*nodeNumber)++
+		curState.number = (*nodeNumber)
+		if _, err = file.WriteString(strconv.FormatUint(curState.number-1, 10)); err != nil {
+			return
+		}
+		if _, err = file.WriteString(" "); err != nil {
+			return
+		}
+		if _, err = file.WriteString(strconv.FormatBool(curState.final)); err != nil {
+			return
+		}
+		for curLetter := curState.letters; curLetter != nil; curLetter = curLetter.next {
+			if _, err = file.WriteString(" "); err != nil {
+				return
+			}
+			if _, err = file.WriteString(strconv.QuoteRune(curLetter.char)); err != nil {
+				return
+			}
+			if _, err = file.WriteString(" "); err != nil {
+				return
+			}
+			if _, err = file.WriteString(strconv.FormatUint(curLetter.state.number-1, 10)); err != nil {
+				return
+			}
+		}
+		if _, err = file.WriteString("\n"); err != nil {
+			return
+		}
+	}
+	return
 }
 
 func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool, ignoreChar rune) (words *word, lastWord *word, wordsSize int, er error) {
