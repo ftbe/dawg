@@ -5,9 +5,11 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DAWG is used to store the representation of the Directly Acyclic Word Graph
@@ -427,6 +429,39 @@ func saveSubTrieToFile(file *os.File, curState *state, nodeNumber *uint64) (err 
 		}
 	}
 	return
+}
+
+func (dawg *DAWG) FindRandomWord(wordSize int) (string, error) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// FIXME : infinite loop if no word of size wordSize
+	// FIXME : highly inefficient
+	INFINITE: for {
+		word := new(bytes.Buffer)
+		state := dawg.initialState
+		for i := 0; i < wordSize; i++ {
+			if state.lettersCount == 0 { // That's bad
+				continue INFINITE
+			}
+			var numLetter int
+			if state.lettersCount == 1 {
+				numLetter = 0
+			} else {
+				numLetter = r.Intn(state.lettersCount)
+			}
+			letter := state.letters
+			for j := 0; j < numLetter; j++ {
+				letter = letter.next
+			}
+			_, err := word.WriteRune(letter.char)
+			if err != nil {
+				return "", err
+			}
+			state = letter.state
+		}
+		if state.final {
+			return word.String(), nil
+		}
+	}
 }
 
 func searchSubString(state *state, start bytes.Buffer, end bytes.Buffer, levenshteinDistance int, maxResults int, allowAdd bool, allowDelete bool, ignoreChar rune) (words *word, lastWord *word, wordsSize int, er error) {

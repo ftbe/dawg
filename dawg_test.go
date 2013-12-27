@@ -27,3 +27,17 @@ func TestSearch(t *testing.T) {
 		t.Error("Search failed")
 	}
 }
+
+func TestFindRandomWord(t *testing.T) {
+	dawg := CreateDAWG([]string{"test", "note", "toto", "three"})
+
+	test, err := dawg.FindRandomWord(4)
+	if err != nil || len(test) != 4 {
+		t.Error("Random Search Failed")
+	}
+
+	test, err = dawg.FindRandomWord(5)
+	if err != nil || len(test) != 5 {
+		t.Error("Random Search Failed")
+	}
+}
