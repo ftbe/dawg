@@ -41,3 +41,12 @@ func TestFindRandomWord(t *testing.T) {
 		t.Error("Random Search Failed")
 	}
 }
+
+func TestUTF8(t *testing.T) {
+	dawg := CreateDAWG([]string{"日本"})
+
+	test, err := dawg.FindRandomWord(2)
+	if err != nil || test != "日本" {
+		t.Error("UTF-8 Failed")
+	}
+}
