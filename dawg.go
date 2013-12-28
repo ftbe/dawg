@@ -202,7 +202,7 @@ func analyseSubTrie(curState *state, levels []*state, channels []chan int) (subL
 // Add a new word to the Trie
 func addWord(initialState *state, word string) (newEndState bool, wordSize int, createdNodes uint64) {
 	curState := initialState
-	for i, l := range word {
+	for _, l := range word {
 		var curLetter *letter
 		if curState.letters == nil {
 			curLetter = &letter{char: l}
@@ -235,7 +235,7 @@ func addWord(initialState *state, word string) (newEndState bool, wordSize int, 
 			}
 		}
 		curState = curLetter.state
-		wordSize = i + 1 // We can't use len() on UTF-8 strings
+		wordSize++ // We can't use len() on UTF-8 strings
 	}
 	curState.final = true
 	return
